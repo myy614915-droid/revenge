@@ -1,0 +1,53 @@
+name: Invoke process-battles
+
+on:
+  schedule:
+    - cron: '*/1 * * * *' # every minute
+  workflow_dispatch:
+
+jobs:
+  invoke:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - name: Invoke process-battles (with retries)
+        id: invoke
+        run: |
+          set -euo pipefail
+
+          URL="${SUPABASE_URL%/}/functions/v1/process-battles"
+          AUTH="Authorization: Bearer ${SUPABASE_SERVICE_ROLE_KEY}"
+          CONTENT="Content-Type: application/json"
+
+          # Attempt up to 3 times with exponential backoff
+          attempt=0
+          max_attempts=3
+          sleep_seconds=3
+
+          while [ $attempt -lt $max_attempts ]; do
+            attempt=$((attempt+1))
+            echo "Attempt $attempt to call $URL"
+            resp=$(curl -sS -w "\n%{http_code}" -X POST "$URL" -H "$AUTH" -H "$CONTENT" -d '{}' || true)
+            body=$(echo "$resp" | sed '$d')
+            code=$(echo "$resp" | tail -n1)
+
+            echo "HTTP status: $code"
+            echo "Response body: $body"
+
+            if [ "$code" = "200" ] || [ "$code" = "204" ] || [ "$code" = "202" ]; then
+              echo "Invocation succeeded on attempt $attempt"
+              exit 0
+            fi
+
+            if [ $attempt -lt $max_attempts ]; then
+              echo "Invocation failed; retrying after ${sleep_seconds}s..."
+              sleep $sleep_seconds
+              sleep_seconds=$((sleep_seconds * 2))
+            else
+              echo "Invocation failed after $max_attempts attempts"
+              # Fail the job so you get an alert in Actions
+              exit 1
+            fi
+          done
