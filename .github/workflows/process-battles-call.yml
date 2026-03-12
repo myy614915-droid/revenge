@@ -1,0 +1,81 @@
+name: Call Supabase process-battles
+
+on:
+  workflow_dispatch:
+
+jobs:
+  call-process-battles:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+
+      - name: Runner diagnostics (safe)
+        run: |
+          set -euo pipefail
+          echo "Runner: $(uname -a)"
+          echo "User: $(whoami || true)"
+          echo "PWD: $(pwd)"
+          echo "GITHUB_REPOSITORY='${GITHUB_REPOSITORY:-<unset>}'"
+          echo "GITHUB_REF='${GITHUB_REF:-<unset>}'"
+          echo "Listing /home/runner/work:"
+          ls -la /home/runner/work || true
+
+      - name: Manual robust checkout into /tmp
+        run: |
+          set -euo pipefail
+          TARGET_DIR="/tmp/repo-clone"
+          echo "Using target dir: $TARGET_DIR"
+          # Clean & prepare
+          rm -rf "$TARGET_DIR" || true
+          mkdir -p "$TARGET_DIR"
+          git config --global --add safe.directory "$TARGET_DIR" || true
+
+          # Try to clone via HTTPS (public or with token if provided)
+          echo "Cloning https://github.com/${GITHUB_REPOSITORY}.git (depth=1)"
+          git clone --depth=1 "https://github.com/${GITHUB_REPOSITORY}.git" "$TARGET_DIR"
+
+          # If a specific ref is requested, try to fetch and checkout it
+          if [ -n "${GITHUB_REF:-}" ]; then
+            echo "Attempting to fetch and checkout ref ${GITHUB_REF}"
+            cd "$TARGET_DIR"
+            git fetch --depth=1 origin "${GITHUB_REF}" || true
+            git checkout -f "${GITHUB_REF}" || true
+            cd -
+          fi
+
+      - name: Validate secrets presence (safe)
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_URL:-}" ]; then
+            echo "ERROR: SUPABASE_URL is missing"; exit 1
+          fi
+          if [ -z "${SUPABASE_KEY:-}" ]; then
+            echo "ERROR: SUPABASE_KEY is missing"; exit 1
+          fi
+          echo "SUPABASE_URL looks like: ${SUPABASE_URL:0:12}..."
+          if [[ ! "${SUPABASE_URL}" =~ ^https://[A-Za-z0-9.-]+(\:[0-9]+)?/?.*$ ]]; then
+            echo "ERROR: SUPABASE_URL doesn't look like https://<project-ref>.supabase.co"; exit 1
+          fi
+
+      - name: Ensure call script exists & make executable
+        run: |
+          set -euo pipefail
+          TARGET_DIR="/tmp/repo-clone"
+          SCRIPT_PATH="${TARGET_DIR}/scripts/call_process_battles.sh"
+          if [ ! -f "$SCRIPT_PATH" ]; then
+            echo "ERROR: $SCRIPT_PATH not found. Ensure scripts/call_process_battles.sh exists in the repo."; exit 1
+          fi
+          chmod +x "$SCRIPT_PATH"
+
+      - name: Call process-battles (with retries)
+        env:
+          SUPABASE_URL: ${{ env.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ env.SUPABASE_KEY }}
+        run: |
+          set -euo pipefail
+          TARGET_DIR="/tmp/repo-clone"
+          cd "$TARGET_DIR"
+          echo "Invoking scripts/call_process_battles.sh from $TARGET_DIR"
+          ./scripts/call_process_battles.sh
