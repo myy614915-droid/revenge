@@ -22,15 +22,12 @@ sleep_seconds=3
 while [ $attempt -lt $max_attempts ]; do
   attempt=$((attempt+1))
   echo "Attempt $attempt to call $URL"
-  # Use curl with verbose on failure; capture stderr for diagnostics
   resp=$(curl -sS -w "\n%{http_code}" -X POST "$URL" -H "$AUTH_HEADER" -H "$CONTENT" -d '{}' --fail 2>curl_err.log) || true
   body=$(echo "$resp" | sed '$d' || true)
   code=$(echo "$resp" | tail -n1 || true)
 
-  # If curl exited and wrote to curl_err.log, include safe snippet
   if [ -s curl_err.log ]; then
     echo "curl stderr (short):"
-    # print first 5 lines of curl_err.log
     head -n 5 curl_err.log || true
   fi
 
