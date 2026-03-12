@@ -2,6 +2,8 @@ name: Call Supabase process-battles
 
 on:
   workflow_dispatch:
+  # schedule:
+  #   - cron: '0 * * * *' # Uncomment to run hourly
 
 jobs:
   call-process-battles:
@@ -10,5 +12,65 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@sha:${{ vars.CHECKOUT_ACTION_SHA }}
+      - name: Set up minimal git (manual checkout)
+        run: |
+          set -euo pipefail
+          echo "Manual checkout: cloning repository into workspace"
+          # Ensure workspace directory exists and is writable
+          mkdir -p "${GITHUB_WORKSPACE}"
+          git config --global --add safe.directory "${GITHUB_WORKSPACE}" || true
+
+          # If running in a shallow runner that already has code, try to preserve it.
+          if [ -d "${GITHUB_WORKSPACE}/.git" ]; then
+            echo "Repository already present in workspace; fetching latest for requested ref"
+            cd "${GITHUB_WORKSPACE}"
+            git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"
+            git fetch --depth=1 origin "${GITHUB_REF}" || true
+            git checkout -f "${GITHUB_REF}" || true
+            cd -
+          else
+            echo "Cloning repository https://github.com/${GITHUB_REPOSITORY}.git (depth=1)"
+            # Clone into workspace
+            rm -rf "${GITHUB_WORKSPACE}" || true
+            git clone --depth=1 "https://github.com/${GITHUB_REPOSITORY}.git" "${GITHUB_WORKSPACE}"
+            cd "${GITHUB_WORKSPACE}"
+            # Attempt to checkout the specific ref if available
+            if [ -n "${GITHUB_REF:-}" ]; then
+              git fetch --depth=1 origin "${GITHUB_REF}" || true
+              git checkout -f "${GITHUB_REF}" || true
+            fi
+            cd -
+          fi
+
+      - name: Validate secrets presence (safe)
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_URL:-}" ]; then
+            echo "ERROR: SUPABASE_URL is missing"; exit 1
+          fi
+          if [ -z "${SUPABASE_KEY:-}" ]; then
+            echo "ERROR: SUPABASE_KEY is missing"; exit 1
+          fi
+          echo "SUPABASE_URL length: ${#SUPABASE_URL}"
+          echo "SUPABASE_URL starts with: ${SUPABASE_URL:0:12}"
+          if [[ ! "${SUPABASE_URL}" =~ ^https://[A-Za-z0-9.-]+(\:[0-9]+)?/?.*$ ]]; then
+            echo "ERROR: SUPABASE_URL doesn't look like https://<project-ref>.supabase.co"; exit 1
+          fi
+
+      - name: Ensure call script exists & make executable
+        run: |
+          set -euo pipefail
+          SCRIPT_PATH="${GITHUB_WORKSPACE}/scripts/call_process_battles.sh"
+          if [ ! -f "$SCRIPT_PATH" ]; then
+            echo "ERROR: $SCRIPT_PATH not found. Ensure scripts/call_process_battles.sh exists in the repo."; exit 1
+          fi
+          chmod +x "$SCRIPT_PATH"
+
+      - name: Call process-battles (with retries)
+        env:
+          SUPABASE_URL: ${{ env.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ env.SUPABASE_KEY }}
+        run: |
+          set -euo pipefail
+          cd "${GITHUB_WORKSPACE}"
+          ./scripts/call_process_battles.sh
