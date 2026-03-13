@@ -1,4 +1,4 @@
-name: Call Supabase process-battles
+name: Call Supabase process-battles (no actions/checkout)
 
 on:
   workflow_dispatch:
@@ -15,75 +15,40 @@ jobs:
       SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
     steps:
 
-      - name: Runner diagnostics (safe)
+      - name: Runner diagnostics
         run: |
           set -euo pipefail
           echo "Runner: $(uname -a)"
-          echo "User: $(whoami || true)"
           echo "PWD: $(pwd)"
-          echo "GITHUB_REPOSITORY='${GITHUB_REPOSITORY:-<unset>}'"
-          echo "GITHUB_REF='${GITHUB_REF:-<unset>}'"
-          echo "Listing working directory:"
-          ls -la || true
+          ls -la
 
-      - name: Checkout repository
-        uses: actions/checkout@0f0a5b8d1a5f8f0b8a5a9e8c3d4b2e1f0c9a7d6b
-        with:
-          fetch-depth: 1
-
-      - name: Copy repo to /tmp/repo-clone
+      - name: Clone repo to /tmp/repo-clone (public repo)
         run: |
           set -euo pipefail
           TARGET_DIR="/tmp/repo-clone"
-          echo "Preparing target dir: $TARGET_DIR"
+          REPO="https://github.com/myy614915-droid/revenge.git"
+          echo "Cloning $REPO into $TARGET_DIR"
           rm -rf "$TARGET_DIR" || true
-          mkdir -p "$TARGET_DIR"
-          cp -a . "$TARGET_DIR"
+          git clone --depth=1 "$REPO" "$TARGET_DIR"
           chmod -R u+rwX "$TARGET_DIR"
-          echo "Contents of $TARGET_DIR:"
+          echo "Contents:"
           ls -la "$TARGET_DIR" | sed -n '1,200p'
 
-      - name: Validate secrets presence (safe)
+      - name: Validate secrets presence
         run: |
           set -euo pipefail
-          if [ -z "${SUPABASE_URL:-}" ]; then
-            echo "ERROR: SUPABASE_URL is missing"; exit 1
-          fi
-          if [ -z "${SUPABASE_KEY:-}" ]; then
-            echo "ERROR: SUPABASE_KEY is missing"; exit 1
-          fi
-          echo "SUPABASE_URL preview: ${SUPABASE_URL:0:30}..."
-          if [[ ! "${SUPABASE_URL}" =~ ^https://[A-Za-z0-9.-]+ ]]; then
-            echo "ERROR: SUPABASE_URL doesn't look like https://<project-ref>.supabase.co"; exit 1
+          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_KEY:-}" ]; then
+            echo "ERROR: Required secrets are missing"; exit 1
           fi
 
-      - name: Ensure call script exists & make executable
+      - name: Ensure call script exists & execute
         run: |
           set -euo pipefail
           TARGET_DIR="/tmp/repo-clone"
-          SCRIPT_PATH="${TARGET_DIR}/scripts/call_process_battles.sh"
-          if [ ! -f "$SCRIPT_PATH" ]; then
-            echo "ERROR: $SCRIPT_PATH not found. Ensure scripts/call_process_battles.sh exists in the repo."; exit 1
+          SCRIPT="${TARGET_DIR}/scripts/call_process_battles.sh"
+          if [ ! -f "$SCRIPT" ]; then
+            echo "ERROR: $SCRIPT not found"; exit 1
           fi
-          chmod +x "$SCRIPT_PATH"
-          echo "Script permissions:"
-          ls -l "$SCRIPT_PATH"
-
-      - name: Dry-run check (optional, non-destructive)
-        run: |
-          set -euo pipefail
-          TARGET_DIR="/tmp/repo-clone"
-          echo "Performing quick dry-run to ensure script executes without network call..."
-          (SUPABASE_URL="https://example.supabase.co" SUPABASE_KEY="fakekey" bash -n "$TARGET_DIR/scripts/call_process_battles.sh") || true
-          echo "Dry-run syntax check succeeded."
-
-      - name: Call process-battles (with retries)
-        env:
-          SUPABASE_URL: ${{ env.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ env.SUPABASE_KEY }}
-        run: |
-          set -euo pipefail
-          TARGET_DIR="/tmp/repo-clone"
-          cd "$TARGET_DIR"
-          echo "Invoking $TARGET_DIR/scripts/call_process_battles.sh"
-          ./scripts/call_process_battles.sh
+          chmod +x "$SCRIPT"
+          echo "Running script..."
+          bash "$SCRIPT"
