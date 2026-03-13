@@ -58,14 +58,15 @@ jobs:
 
       - name: Validate SUPABASE secrets
         run: |
-          set -euo pipefail
-          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_KEY:-}" ]; then
-            echo "ERROR: Required SUPABASE secrets missing"; exit 1
+            set -euo pipefail
+          : "${SUPABASE_URL:?Missing SUPABASE_URL secret}"
+          : "${SUPABASE_KEY:?Missing SUPABASE_KEY secret}"
+          # فقط تحقق أن يبدأ SUPABASE_URL بـ https://
+          if [[ "${SUPABASE_URL}" != https://* ]]; then
+            echo "ERROR: SUPABASE_URL must start with https://"; exit 1
           fi
-          if [[ ! "${SUPABASE_URL}" =~ ^https://[A-Za-z0-9.-]+ ]]; then
-            echo "ERROR: SUPABASE_URL doesn't look valid: ${SUPABASE_URL}"; exit 1
-          fi
-          echo "SUPABASE secrets appear present."
+           echo "SUPABASE secrets appear present."
+
 
       - name: Execute call script
         run: |
