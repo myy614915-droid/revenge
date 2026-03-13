@@ -11,7 +11,6 @@ jobs:
   call-process-battles:
     runs-on: ubuntu-latest
     env:
-      # These will be populated from repository secrets below into the runtime env
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
     steps:
@@ -28,7 +27,7 @@ jobs:
           ls -la || true
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@0f0a5b8d1a5f8f0b8a5a9e8c3d4b2e1f0c9a7d6b
         with:
           fetch-depth: 1
 
@@ -39,9 +38,7 @@ jobs:
           echo "Preparing target dir: $TARGET_DIR"
           rm -rf "$TARGET_DIR" || true
           mkdir -p "$TARGET_DIR"
-          # Copy working directory contents (preserves .gitignored state as in runner checkout)
           cp -a . "$TARGET_DIR"
-          # Ensure readable & executable where appropriate
           chmod -R u+rwX "$TARGET_DIR"
           echo "Contents of $TARGET_DIR:"
           ls -la "$TARGET_DIR" | sed -n '1,200p'
@@ -55,9 +52,7 @@ jobs:
           if [ -z "${SUPABASE_KEY:-}" ]; then
             echo "ERROR: SUPABASE_KEY is missing"; exit 1
           fi
-          # Print a truncated preview only (avoid leaking secret)
           echo "SUPABASE_URL preview: ${SUPABASE_URL:0:30}..."
-          # Basic URL sanity check
           if [[ ! "${SUPABASE_URL}" =~ ^https://[A-Za-z0-9.-]+ ]]; then
             echo "ERROR: SUPABASE_URL doesn't look like https://<project-ref>.supabase.co"; exit 1
           fi
@@ -79,8 +74,6 @@ jobs:
           set -euo pipefail
           TARGET_DIR="/tmp/repo-clone"
           echo "Performing quick dry-run to ensure script executes without network call..."
-          # Temporarily run the script but in dry-run mode if it supports it.
-          # If your script has no dry-run flag, this step just verifies execution permission.
           (SUPABASE_URL="https://example.supabase.co" SUPABASE_KEY="fakekey" bash -n "$TARGET_DIR/scripts/call_process_battles.sh") || true
           echo "Dry-run syntax check succeeded."
 
@@ -93,5 +86,4 @@ jobs:
           TARGET_DIR="/tmp/repo-clone"
           cd "$TARGET_DIR"
           echo "Invoking $TARGET_DIR/scripts/call_process_battles.sh"
-          # The script itself contains retry logic; just invoke it.
           ./scripts/call_process_battles.sh
