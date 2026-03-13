@@ -1,4 +1,4 @@
-name: Call Supabase process-battles (no actions/checkout)
+name: Call Supabase process-battles (public clone)
 
 on:
   workflow_dispatch:
@@ -13,42 +13,65 @@ jobs:
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+      REPO_URL: "https://github.com/myy614915-droid/revenge.git"
     steps:
 
-      - name: Runner diagnostics
+      - name: Runner diagnostics (quick)
         run: |
           set -euo pipefail
           echo "Runner: $(uname -a)"
           echo "PWD: $(pwd)"
+          echo "Testing network to github.com"
+          ping -c 1 github.com || true
+          echo "Resolving github.com"
+          nslookup github.com || true
+          echo "Curl github homepage (safe, non-fatal)"
+          curl -I --max-time 10 https://github.com || true
           ls -la
 
-      - name: Clone repo to /tmp/repo-clone (public repo)
+      - name: Clone public repo to /tmp/repo-clone
         run: |
           set -euo pipefail
           TARGET_DIR="/tmp/repo-clone"
-          REPO="https://github.com/myy614915-droid/revenge.git"
-          echo "Cloning $REPO into $TARGET_DIR"
+          echo "Cloning $REPO_URL into $TARGET_DIR"
           rm -rf "$TARGET_DIR" || true
-          git clone --depth=1 "$REPO" "$TARGET_DIR"
+          git clone --depth=1 "$REPO_URL" "$TARGET_DIR"
+          echo "Clone exit status: $?"
           chmod -R u+rwX "$TARGET_DIR"
-          echo "Contents:"
+          echo "Contents of $TARGET_DIR:"
           ls -la "$TARGET_DIR" | sed -n '1,200p'
 
-      - name: Validate secrets presence
+      - name: Validate presence of call script
+        run: |
+          set -euo pipefail
+          TARGET_DIR="/tmp/repo-clone"
+          SCRIPT_PATH="${TARGET_DIR}/scripts/call_process_battles.sh"
+          echo "Checking for $SCRIPT_PATH"
+          if [ ! -f "$SCRIPT_PATH" ]; then
+            echo "ERROR: $SCRIPT_PATH not found. Listing repo top-level:"
+            ls -la "$TARGET_DIR"
+            exit 1
+          fi
+          echo "Found call script. Showing head:"
+          head -n 40 "$SCRIPT_PATH" || true
+          chmod +x "$SCRIPT_PATH"
+
+      - name: Validate SUPABASE secrets
         run: |
           set -euo pipefail
           if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_KEY:-}" ]; then
-            echo "ERROR: Required secrets are missing"; exit 1
+            echo "ERROR: Required SUPABASE secrets missing"; exit 1
           fi
+          if [[ ! "${SUPABASE_URL}" =~ ^https://[A-Za-z0-9.-]+ ]]; then
+            echo "ERROR: SUPABASE_URL doesn't look valid: ${SUPABASE_URL}"; exit 1
+          fi
+          echo "SUPABASE secrets appear present."
 
-      - name: Ensure call script exists & execute
+      - name: Execute call script
         run: |
           set -euo pipefail
           TARGET_DIR="/tmp/repo-clone"
-          SCRIPT="${TARGET_DIR}/scripts/call_process_battles.sh"
-          if [ ! -f "$SCRIPT" ]; then
-            echo "ERROR: $SCRIPT not found"; exit 1
-          fi
-          chmod +x "$SCRIPT"
-          echo "Running script..."
-          bash "$SCRIPT"
+          SCRIPT_PATH="${TARGET_DIR}/scripts/call_process_battles.sh"
+          echo "Running $SCRIPT_PATH"
+          # Run with environment variables available to the script
+          SUPABASE_URL="${SUPABASE_URL}" SUPABASE_KEY="${SUPABASE_KEY}" bash "$SCRIPT_PATH"
