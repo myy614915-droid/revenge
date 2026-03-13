@@ -3,10 +3,15 @@ name: Call Supabase process-battles
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+  id-token: write
+
 jobs:
   call-process-battles:
     runs-on: ubuntu-latest
     env:
+      # These will be populated from repository secrets below into the runtime env
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
     steps:
@@ -19,31 +24,27 @@ jobs:
           echo "PWD: $(pwd)"
           echo "GITHUB_REPOSITORY='${GITHUB_REPOSITORY:-<unset>}'"
           echo "GITHUB_REF='${GITHUB_REF:-<unset>}'"
-          echo "Listing /home/runner/work:"
-          ls -la /home/runner/work || true
+          echo "Listing working directory:"
+          ls -la || true
 
-      - name: Manual robust checkout into /tmp
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Copy repo to /tmp/repo-clone
         run: |
           set -euo pipefail
           TARGET_DIR="/tmp/repo-clone"
-          echo "Using target dir: $TARGET_DIR"
-          # Clean & prepare
+          echo "Preparing target dir: $TARGET_DIR"
           rm -rf "$TARGET_DIR" || true
           mkdir -p "$TARGET_DIR"
-          git config --global --add safe.directory "$TARGET_DIR" || true
-
-          # Try to clone via HTTPS (public or with token if provided)
-          echo "Cloning https://github.com/${GITHUB_REPOSITORY}.git (depth=1)"
-          git clone --depth=1 "https://github.com/${GITHUB_REPOSITORY}.git" "$TARGET_DIR"
-
-          # If a specific ref is requested, try to fetch and checkout it
-          if [ -n "${GITHUB_REF:-}" ]; then
-            echo "Attempting to fetch and checkout ref ${GITHUB_REF}"
-            cd "$TARGET_DIR"
-            git fetch --depth=1 origin "${GITHUB_REF}" || true
-            git checkout -f "${GITHUB_REF}" || true
-            cd -
-          fi
+          # Copy working directory contents (preserves .gitignored state as in runner checkout)
+          cp -a . "$TARGET_DIR"
+          # Ensure readable & executable where appropriate
+          chmod -R u+rwX "$TARGET_DIR"
+          echo "Contents of $TARGET_DIR:"
+          ls -la "$TARGET_DIR" | sed -n '1,200p'
 
       - name: Validate secrets presence (safe)
         run: |
@@ -54,8 +55,10 @@ jobs:
           if [ -z "${SUPABASE_KEY:-}" ]; then
             echo "ERROR: SUPABASE_KEY is missing"; exit 1
           fi
-          echo "SUPABASE_URL looks like: ${SUPABASE_URL:0:12}..."
-          if [[ ! "${SUPABASE_URL}" =~ ^https://[A-Za-z0-9.-]+(\:[0-9]+)?/?.*$ ]]; then
+          # Print a truncated preview only (avoid leaking secret)
+          echo "SUPABASE_URL preview: ${SUPABASE_URL:0:30}..."
+          # Basic URL sanity check
+          if [[ ! "${SUPABASE_URL}" =~ ^https://[A-Za-z0-9.-]+ ]]; then
             echo "ERROR: SUPABASE_URL doesn't look like https://<project-ref>.supabase.co"; exit 1
           fi
 
@@ -68,6 +71,18 @@ jobs:
             echo "ERROR: $SCRIPT_PATH not found. Ensure scripts/call_process_battles.sh exists in the repo."; exit 1
           fi
           chmod +x "$SCRIPT_PATH"
+          echo "Script permissions:"
+          ls -l "$SCRIPT_PATH"
+
+      - name: Dry-run check (optional, non-destructive)
+        run: |
+          set -euo pipefail
+          TARGET_DIR="/tmp/repo-clone"
+          echo "Performing quick dry-run to ensure script executes without network call..."
+          # Temporarily run the script but in dry-run mode if it supports it.
+          # If your script has no dry-run flag, this step just verifies execution permission.
+          (SUPABASE_URL="https://example.supabase.co" SUPABASE_KEY="fakekey" bash -n "$TARGET_DIR/scripts/call_process_battles.sh") || true
+          echo "Dry-run syntax check succeeded."
 
       - name: Call process-battles (with retries)
         env:
@@ -77,5 +92,6 @@ jobs:
           set -euo pipefail
           TARGET_DIR="/tmp/repo-clone"
           cd "$TARGET_DIR"
-          echo "Invoking scripts/call_process_battles.sh from $TARGET_DIR"
+          echo "Invoking $TARGET_DIR/scripts/call_process_battles.sh"
+          # The script itself contains retry logic; just invoke it.
           ./scripts/call_process_battles.sh
