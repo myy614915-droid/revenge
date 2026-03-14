@@ -13,13 +13,14 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}   # اتركه فارغًا أو احذفه إن لم تستخدمه
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Install required packages (psql) 
-        if: env.DATABASE_URL != ''
+      - name: Install required packages (psql)
+        if: ${{ env.DATABASE_URL != '' }}
         run: |
           sudo apt-get update
           sudo apt-get install -y postgresql-client
@@ -36,7 +37,6 @@ jobs:
           : "${SUPABASE_URL:?Missing SUPABASE_URL secret — add in Settings → Secrets and variables → Actions}"
           : "${SUPABASE_ANON_KEY:?Missing SUPABASE_ANON_KEY secret — add in Settings → Secrets and variables → Actions}"
 
-          # SUPABASE_URL must start with https://
           if [[ "${SUPABASE_URL}" != https://* ]]; then
             echo "ERROR: SUPABASE_URL must start with https://"
             exit 1
@@ -75,22 +75,15 @@ jobs:
             exit 1
           }
           echo "SUPABASE_URL HTTP status: ${status}"
-          # من الناحية العملية: 200 أو 302 أو 403 قد تكون مقبولة حسب إعدادات المشروع
 
-      - name: Test PostgreSQL connection (psql) 
-        if: env.DATABASE_URL != ''
+      - name: Test PostgreSQL connection (psql)
+        if: ${{ env.DATABASE_URL != '' }}
         shell: bash
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           set -euo pipefail
-          # لا نطبع DATABASE_URL أو كلمة السر
-          # استخرج كلمة السر مؤقتًا ثم استخدم psql
-          # تنبيه: هذا يعتمد على نمط DATABASE_URL المستخدم
-          # مثال نمط: postgresql://user:password@host:port/dbname
-          # استخراج كلمة السر (تعامل بسيط — يعمل مع الأنماط الشائعة)
           password="$(echo "$DATABASE_URL" | sed -E 's#.*:([^@:]+)@.*#\1#')"
-          # استخراج ما قبل كلمة السر لإعادة بناء connection string بدون كلمة السر (user@host:port/db)
           conn_no_pw="$(echo "$DATABASE_URL" | sed -E 's#:(?:[^@:]+)@#:@#')"
 
           if [[ -z "${password}" || -z "${conn_no_pw}" ]]; then
@@ -98,7 +91,6 @@ jobs:
             exit 1
           fi
 
-          # استخدم PGPASSWORD لتجنب ظهور كلمة السر في السجلات
           PGPASSWORD="${password}" psql "${conn_no_pw}" -c '\conninfo' || {
             echo "ERROR: psql connection failed"
             exit 1
@@ -106,16 +98,13 @@ jobs:
           echo "psql connection succeeded."
 
       - name: Optional: Run migrations or tests
-        if: env.DATABASE_URL != ''
+        if: ${{ env.DATABASE_URL != '' }}
         shell: bash
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           set -euo pipefail
           echo "Run your DB migrations or tests here using DATABASE_URL (not printed)."
-          # Example:
-          # PGPASSWORD="$(echo "$DATABASE_URL" | sed -E 's#.*:([^@:]+)@.*#\1#')" \
-          #   your-migration-tool --url "$DATABASE_URL" migrate
 
       - name: Finish
         run: echo "Supabase CI checks completed."
