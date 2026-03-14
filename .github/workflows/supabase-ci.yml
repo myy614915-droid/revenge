@@ -97,15 +97,4 @@ jobs:
           }
           echo "psql connection succeeded."
 
-         name:Optional: Run migrations or tests
-      
-        if: ${{ env.DATABASE_URL != '' }}
-        shell: bash
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          set -euo pipefail
-          echo "Run your DB migrations or tests here using DATABASE_URL (not printed)."
-
-      - name: Finish
-        run: echo "Supabase CI checks completed."
+         
