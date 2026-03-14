@@ -97,7 +97,8 @@ jobs:
           }
           echo "psql connection succeeded."
 
-      - name: Optional: Run migrations or tests
+         name:Optional: Run migrations or tests
+      
         if: ${{ env.DATABASE_URL != '' }}
         shell: bash
         env:
